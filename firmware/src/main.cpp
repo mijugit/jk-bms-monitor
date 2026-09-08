@@ -35,6 +35,8 @@ static uint8_t frameBuf[JK_RESPONSE_FRAME_LENGTH];
 static size_t frameBufLen = 0;
 static volatile bool frameReady = false;
 static JkBmsReading latestReading;
+static uint8_t latestRawFrame[JK_RESPONSE_FRAME_LENGTH];
+static bool debugRawFrameSent = false; // send the raw frame hex once, for offset debugging
 
 class JkScanCallbacks : public NimBLEAdvertisedDeviceCallbacks {
     void onResult(NimBLEAdvertisedDevice *advertisedDevice) override {
@@ -74,19 +76,7 @@ void onNotify(NimBLERemoteCharacteristic *pChar, uint8_t *pData, size_t length, 
             return;
         }
 
-        static bool dumpedOnce = false;
-        if (!dumpedOnce) {
-            dumpedOnce = true;
-            Serial.println("=== FULL 300-BYTE CELL-INFO FRAME (one-time dump) ===");
-            for (size_t i = 0; i < JK_RESPONSE_FRAME_LENGTH; i += 16) {
-                Serial.printf("%3u: ", (unsigned) i);
-                for (size_t j = i; j < i + 16 && j < JK_RESPONSE_FRAME_LENGTH; j++) {
-                    Serial.printf("%02X ", frameBuf[j]);
-                }
-                Serial.println();
-            }
-            Serial.println("=== END DUMP ===");
-        }
+        memcpy(latestRawFrame, frameBuf, JK_RESPONSE_FRAME_LENGTH);
 
         JkBmsReading r = jkParseCellInfoFrame(frameBuf, JK_RESPONSE_FRAME_LENGTH);
         if (r.valid) {
@@ -234,6 +224,22 @@ void postReading(const JkBmsReading &r) {
     doc["full_capacity_ah"] = r.fullCapacityAh;
     doc["charge_mosfet_on"] = r.chargeMosfetOn;
     doc["discharge_mosfet_on"] = r.dischargeMosfetOn;
+
+    // TEMP DEBUG (remove once offsets are confirmed against real hardware):
+    // ship the complete raw frame as hex once, so it lands intact in the
+    // database (raw_json) — serial printing 300 bytes was dropping/mangling
+    // characters, HTTPS is reliable.
+    if (!debugRawFrameSent) {
+        debugRawFrameSent = true;
+        String hex;
+        hex.reserve(JK_RESPONSE_FRAME_LENGTH * 2);
+        char buf[3];
+        for (size_t i = 0; i < JK_RESPONSE_FRAME_LENGTH; i++) {
+            snprintf(buf, sizeof(buf), "%02X", latestRawFrame[i]);
+            hex += buf;
+        }
+        doc["debug_raw_frame_hex"] = hex;
+    }
 
     String body;
     serializeJson(doc, body);
