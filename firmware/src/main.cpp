@@ -156,10 +156,27 @@ void connectBleIfNeeded() {
 }
 
 void requestReading() {
-    if (!bleIsReady()) return;
+    if (!bleIsReady()) {
+        Serial.println("requestReading: BLE not ready, skipping.");
+        return;
+    }
     uint8_t frame[20];
     jkBuildRequestFrame(JK_COMMAND_CELL_INFO, frame);
-    bleChar->writeValue(frame, sizeof(frame), false);
+
+    Serial.printf(
+        "requestReading: canWrite=%d canWriteNoResponse=%d — frame: ",
+        bleChar->canWrite(), bleChar->canWriteNoResponse()
+    );
+    for (int i = 0; i < 20; i++) Serial.printf("%02X ", frame[i]);
+    Serial.println();
+
+    bool ok = bleChar->writeValue(frame, sizeof(frame), false);
+    Serial.printf("requestReading: writeValue (no response) returned %s\n", ok ? "true" : "false");
+
+    if (!ok) {
+        bool ok2 = bleChar->writeValue(frame, sizeof(frame), true);
+        Serial.printf("requestReading: retried with response, returned %s\n", ok2 ? "true" : "false");
+    }
 }
 
 // ---------------------------------------------------------------------
