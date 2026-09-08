@@ -221,6 +221,22 @@ void postReading(const JkBmsReading &r) {
     doc["charge_mosfet_on"] = r.chargeMosfetOn;
     doc["discharge_mosfet_on"] = r.dischargeMosfetOn;
 
+    // Extra detail the official JK app also shows — not in dedicated DB
+    // columns, but stored in raw_json and already rendered in the
+    // dashboard's "all read parameters" section.
+    doc["temp_sensor_1_c"] = r.tempSensor1C;
+    doc["temp_sensor_2_c"] = r.tempSensor2C;
+    doc["temp_mosfet_c"] = r.tempMosfetC;
+    doc["balance_current_amps"] = r.balanceCurrentAmps;
+    doc["balancer_status"] = r.balancerStatus; // 0=off, 1=charging balance, 2=discharging balance
+
+    JsonArray cellVoltages = doc["cell_voltages_mv"].to<JsonArray>();
+    JsonArray cellResistances = doc["cell_resistances_ohm"].to<JsonArray>();
+    for (int i = 0; i < r.cellCount; i++) {
+        cellVoltages.add(r.cellVoltagesMv[i]);
+        cellResistances.add(r.cellResistancesOhm[i]);
+    }
+
     String body;
     serializeJson(doc, body);
 

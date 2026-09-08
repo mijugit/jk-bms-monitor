@@ -30,6 +30,8 @@ static const uint8_t JK_RESPONSE_PREAMBLE[4] = {0x55, 0xAA, 0xEB, 0x90};
 static const size_t JK_RESPONSE_FRAME_LENGTH = 300;
 static const uint8_t JK_RESPONSE_TYPE_CELL_INFO = 0x02;
 
+static const int JK_MAX_CELLS = 24;
+
 struct JkBmsReading {
     bool valid = false;
     float packVoltage = 0;        // V
@@ -42,6 +44,16 @@ struct JkBmsReading {
     float fullCapacityAh = 0;
     bool chargeMosfetOn = false;
     bool dischargeMosfetOn = false;
+
+    // Per-cell detail + a few extra fields the official JK app also shows.
+    int cellCount = 0;
+    uint16_t cellVoltagesMv[JK_MAX_CELLS] = {0};
+    float cellResistancesOhm[JK_MAX_CELLS] = {0};
+    float tempSensor1C = -999;
+    float tempSensor2C = -999;
+    float tempMosfetC = -999;
+    float balanceCurrentAmps = 0;
+    uint8_t balancerStatus = 0; // 0=off, 1=charging balance, 2=discharging balance
 };
 
 // Builds the 20-byte command frame requesting a data dump for `command`
@@ -121,16 +133,24 @@ inline JkBmsReading jkParseCellInfoFrame(const uint8_t *frame, size_t len) {
 
     // Cell voltages: 24 slots x 2 bytes LE, offset 6..53, millivolts.
     // A slot reading 0 means "not populated" (fewer than 24 cells wired).
+    // Cell resistances: 24 slots x 2 bytes LE, offset 80..127, milliohms
+    // (confirmed against the official app's "Balance Wire Resistance" — see
+    // firmware/README.md). Both arrays share the same populated-slot count.
     uint16_t minMv = 0;
     uint16_t maxMv = 0;
     bool any = false;
-    for (int cell = 0; cell < 24; cell++) {
+    int count = 0;
+    for (int cell = 0; cell < JK_MAX_CELLS; cell++) {
         uint16_t mv = readLE16(frame + 6 + cell * 2);
         if (mv == 0) continue;
+        r.cellVoltagesMv[count] = mv;
+        r.cellResistancesOhm[count] = readLE16(frame + 80 + cell * 2) * 0.001f;
+        count++;
         if (!any || mv < minMv) minMv = mv;
         if (!any || mv > maxMv) maxMv = mv;
         any = true;
     }
+    r.cellCount = count;
     r.cellVoltageMinMv = minMv;
     r.cellVoltageMaxMv = maxMv;
 
@@ -145,14 +165,20 @@ inline JkBmsReading jkParseCellInfoFrame(const uint8_t *frame, size_t len) {
     r.packVoltage = readLE32(frame + 150) * 0.001f;
     r.currentAmps = readLE32(frame + 158) * 0.001f; // sign: see file header note
 
-    float t1 = (int16_t) readLE16(frame + 162) * 0.1f; // sign: see file header note
-    float t2 = (int16_t) readLE16(frame + 164) * 0.1f;
-    float tMos = (int16_t) readLE16(frame + 166) * 0.1f;
-    r.tempMaxC = max(t1, max(t2, tMos));
+    r.tempSensor1C = (int16_t) readLE16(frame + 162) * 0.1f; // sign: see file header note
+    r.tempSensor2C = (int16_t) readLE16(frame + 164) * 0.1f;
+    r.tempMosfetC = (int16_t) readLE16(frame + 166) * 0.1f;
+    r.tempMaxC = max(r.tempSensor1C, max(r.tempSensor2C, r.tempMosfetC));
 
     r.socPercent = frame[173];
     r.remainingCapacityAh = readLE32(frame + 174) * 0.001f;
     r.fullCapacityAh = readLE32(frame + 178) * 0.001f;
+
+    // Balance current + status: same relative offset from `current` (+12, +14)
+    // as the community doc's un-shifted layout — see file header for context.
+    r.balanceCurrentAmps = (int16_t) readLE16(frame + 170) * 0.001f;
+    r.balancerStatus = frame[172];
+
     r.chargeMosfetOn = frame[198] != 0;
     r.dischargeMosfetOn = frame[199] != 0;
 
