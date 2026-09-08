@@ -134,19 +134,27 @@ inline JkBmsReading jkParseCellInfoFrame(const uint8_t *frame, size_t len) {
     r.cellVoltageMinMv = minMv;
     r.cellVoltageMaxMv = maxMv;
 
-    r.packVoltage = readLE32(frame + 118) * 0.001f;
-    r.currentAmps = readLE32(frame + 126) * 0.001f; // sign: see file header note
+    // Offsets below are +32 vs. the JK02_24S community doc — confirmed
+    // empirically against real hardware (see firmware/README.md): pack
+    // voltage matched the sum of actual cell voltages to within 1mV, and
+    // full_capacity_ah matched the owner's known battery bank capacity
+    // exactly. This unit's firmware apparently reserves more space between
+    // the cell-voltage/resistance block and the pack-level fields than the
+    // doc assumed — the relative spacing between fields (voltage->current
+    // +8, etc.) otherwise matches the doc exactly.
+    r.packVoltage = readLE32(frame + 150) * 0.001f;
+    r.currentAmps = readLE32(frame + 158) * 0.001f; // sign: see file header note
 
-    float t1 = (int16_t) readLE16(frame + 130) * 0.1f; // sign: see file header note
-    float t2 = (int16_t) readLE16(frame + 132) * 0.1f;
-    float tMos = (int16_t) readLE16(frame + 134) * 0.1f;
+    float t1 = (int16_t) readLE16(frame + 162) * 0.1f; // sign: see file header note
+    float t2 = (int16_t) readLE16(frame + 164) * 0.1f;
+    float tMos = (int16_t) readLE16(frame + 166) * 0.1f;
     r.tempMaxC = max(t1, max(t2, tMos));
 
-    r.socPercent = frame[141];
-    r.remainingCapacityAh = readLE32(frame + 142) * 0.001f;
-    r.fullCapacityAh = readLE32(frame + 146) * 0.001f;
-    r.chargeMosfetOn = frame[166] != 0;
-    r.dischargeMosfetOn = frame[167] != 0;
+    r.socPercent = frame[173];
+    r.remainingCapacityAh = readLE32(frame + 174) * 0.001f;
+    r.fullCapacityAh = readLE32(frame + 178) * 0.001f;
+    r.chargeMosfetOn = frame[198] != 0;
+    r.dischargeMosfetOn = frame[199] != 0;
 
     r.valid = true;
     return r;
