@@ -1,0 +1,29 @@
+# Environment / secrets
+.env
+
+# Composer — vendor ignored, composer.lock committed (reproducible deploys)
+vendor/
+composer.phar
+
+# PHP cache / logs
+*.log
+*.cache
+/tmp/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Claude Code project settings
+.claude/
+
+# deployment/ — never commit (server credentials in plaintext)
+deployment/
+
+# PHPUnit cache
+.phpunit.result.cache
