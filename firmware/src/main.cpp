@@ -71,6 +71,7 @@ void onNotify(NimBLERemoteCharacteristic *pChar, uint8_t *pData, size_t length, 
             frameReady = true;
         } else {
             Serial.println("Frame received but failed checksum/shape validation — dropped.");
+            jkLogFrameDiagnostics(frameBuf, JK_RESPONSE_FRAME_LENGTH);
         }
         frameBufLen = 0;
     }
@@ -79,6 +80,8 @@ void onNotify(NimBLERemoteCharacteristic *pChar, uint8_t *pData, size_t length, 
 bool bleIsReady() {
     return bleClient != nullptr && bleClient->isConnected() && bleChar != nullptr;
 }
+
+void requestReading(); // forward decl — used by connectBleIfNeeded() below, defined further down
 
 void startBleScan() {
     if (bleScanning || targetDevice != nullptr) return;
@@ -136,6 +139,11 @@ void connectBleIfNeeded() {
 
     bleChar->subscribe(true, onNotify);
     Serial.println("BLE connected and subscribed.");
+
+    // Some JK BMS BLE bridges auto-stream once subscribed; others wait for
+    // an explicit request. Send one right away so both kinds work, instead
+    // of waiting for the next 30s cycle.
+    requestReading();
 }
 
 void requestReading() {

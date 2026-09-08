@@ -84,6 +84,30 @@ inline int32_t readLE32(const uint8_t *p) {
     return (int32_t) ((uint32_t) p[0] | ((uint32_t) p[1] << 8) | ((uint32_t) p[2] << 16) | ((uint32_t) p[3] << 24));
 }
 
+// Diagnostic dump for a frame that failed validation — prints enough to tell
+// apart "wrong preamble" (garbage/desync) vs "wrong type" (e.g. an auth
+// challenge or activation frame instead of cell-info) vs "right shape but
+// bad checksum" (real parsing bug), rather than a single opaque "dropped".
+inline void jkLogFrameDiagnostics(const uint8_t *frame, size_t len) {
+    Serial.printf("  frame diagnostics: length=%u (expected %u)\n", (unsigned) len, (unsigned) JK_RESPONSE_FRAME_LENGTH);
+    Serial.print("  first 16 bytes: ");
+    for (size_t i = 0; i < 16 && i < len; i++) {
+        Serial.printf("%02X ", frame[i]);
+    }
+    Serial.println();
+    if (len >= 4) {
+        Serial.printf("  preamble valid: %s\n", jkFrameHasValidPreamble(frame) ? "yes" : "NO");
+    }
+    if (len >= 5) {
+        Serial.printf("  type byte (offset 4): 0x%02X (expected 0x%02X for cell info)\n", frame[4], JK_RESPONSE_TYPE_CELL_INFO);
+    }
+    if (len == JK_RESPONSE_FRAME_LENGTH) {
+        uint32_t sum = 0;
+        for (size_t i = 0; i < len - 1; i++) sum += frame[i];
+        Serial.printf("  checksum: computed=0x%02X received=0x%02X\n", (uint8_t) (sum & 0xFF), frame[len - 1]);
+    }
+}
+
 // Parses a complete, checksum-validated 300-byte cell-info (0x02) frame.
 // Returns a JkBmsReading with valid=false if the frame doesn't look right.
 inline JkBmsReading jkParseCellInfoFrame(const uint8_t *frame, size_t len) {
