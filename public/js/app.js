@@ -26,7 +26,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     data: history.map((point) => point.value),
                     borderColor: '#3ddc84',
                     tension: 0.2,
-                    pointRadius: 0,
+                    pointRadius: history.length > 1 ? 0 : 3,
                 }],
             },
             options: {
