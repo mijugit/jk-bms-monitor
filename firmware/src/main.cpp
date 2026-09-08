@@ -65,12 +65,21 @@ void onNotify(NimBLERemoteCharacteristic *pChar, uint8_t *pData, size_t length, 
         frameBuf[frameBufLen++] = pData[i];
     }
     if (frameBufLen >= JK_RESPONSE_FRAME_LENGTH) {
+        uint8_t frameType = frameBuf[4];
+        if (frameType != JK_RESPONSE_TYPE_CELL_INFO) {
+            // The BMS also auto-pushes 0x01 (settings) and 0x03 (device info)
+            // frames — not an error, just not what we're looking for.
+            Serial.printf("Received frame type 0x%02X (not cell info 0x%02X) — ignoring.\n", frameType, JK_RESPONSE_TYPE_CELL_INFO);
+            frameBufLen = 0;
+            return;
+        }
+
         JkBmsReading r = jkParseCellInfoFrame(frameBuf, JK_RESPONSE_FRAME_LENGTH);
         if (r.valid) {
             latestReading = r;
             frameReady = true;
         } else {
-            Serial.println("Frame received but failed checksum/shape validation — dropped.");
+            Serial.println("Cell-info frame received but failed checksum validation — dropped.");
             jkLogFrameDiagnostics(frameBuf, JK_RESPONSE_FRAME_LENGTH);
         }
         frameBufLen = 0;
