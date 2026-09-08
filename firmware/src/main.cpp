@@ -149,9 +149,22 @@ void connectBleIfNeeded() {
     bleChar->subscribe(true, onNotify);
     Serial.println("BLE connected and subscribed.");
 
-    // Some JK BMS BLE bridges auto-stream once subscribed; others wait for
-    // an explicit request. Send one right away so both kinds work, instead
-    // of waiting for the next 30s cycle.
+    // Mirrors the working sequence in schweizp/jkbms_ble (Python): a raw
+    // "01 00" enable write to the characteristic itself (distinct from the
+    // CCCD subscribe above), then request device info (0x97) BEFORE cell
+    // info (0x96) — on real hardware, 0x96 alone never produced a 0x02
+    // response; this ordering is what a confirmed-working implementation
+    // does before the BMS starts answering 0x96 requests.
+    uint8_t enableFrame[2] = {0x01, 0x00};
+    bleChar->writeValue(enableFrame, sizeof(enableFrame), false);
+    delay(200);
+
+    uint8_t deviceInfoFrame[20];
+    jkBuildRequestFrame(JK_COMMAND_DEVICE_INFO, deviceInfoFrame);
+    bleChar->writeValue(deviceInfoFrame, sizeof(deviceInfoFrame), false);
+    Serial.println("Sent enable + device-info (0x97) request.");
+    delay(500);
+
     requestReading();
 }
 

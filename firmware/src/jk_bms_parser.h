@@ -24,6 +24,7 @@ static const char *JK_BLE_SERVICE_UUID = "0000ffe0-0000-1000-8000-00805f9b34fb";
 static const char *JK_BLE_CHAR_UUID    = "0000ffe1-0000-1000-8000-00805f9b34fb";
 
 static const uint8_t JK_COMMAND_CELL_INFO = 0x96;
+static const uint8_t JK_COMMAND_DEVICE_INFO = 0x97;
 
 static const uint8_t JK_RESPONSE_PREAMBLE[4] = {0x55, 0xAA, 0xEB, 0x90};
 static const size_t JK_RESPONSE_FRAME_LENGTH = 300;
