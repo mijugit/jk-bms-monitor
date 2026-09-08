@@ -74,6 +74,20 @@ void onNotify(NimBLERemoteCharacteristic *pChar, uint8_t *pData, size_t length, 
             return;
         }
 
+        static bool dumpedOnce = false;
+        if (!dumpedOnce) {
+            dumpedOnce = true;
+            Serial.println("=== FULL 300-BYTE CELL-INFO FRAME (one-time dump) ===");
+            for (size_t i = 0; i < JK_RESPONSE_FRAME_LENGTH; i += 16) {
+                Serial.printf("%3u: ", (unsigned) i);
+                for (size_t j = i; j < i + 16 && j < JK_RESPONSE_FRAME_LENGTH; j++) {
+                    Serial.printf("%02X ", frameBuf[j]);
+                }
+                Serial.println();
+            }
+            Serial.println("=== END DUMP ===");
+        }
+
         JkBmsReading r = jkParseCellInfoFrame(frameBuf, JK_RESPONSE_FRAME_LENGTH);
         if (r.valid) {
             latestReading = r;
