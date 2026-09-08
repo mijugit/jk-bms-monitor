@@ -9,7 +9,7 @@ return [
     'base_url' => $_ENV['APP_URL'] ?? 'http://localhost',
 
     // Single shared password gating the whole web app (Access Control — no per-user accounts in MVP).
-    'app_password' => $_ENV['APP_PASSWORD'] ?? '',
+    'app_password' => $_ENV['JKBMS_PASS'] ?? '',
 
     'db' => [
         'driver'   => 'mysql',

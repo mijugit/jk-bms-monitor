@@ -25,5 +25,8 @@ Thumbs.db
 # deployment/ — never commit (server credentials in plaintext)
 deployment/
 
+# Ad-hoc hosting credential notes — never commit
+db.txt
+
 # PHPUnit cache
 .phpunit.result.cache
