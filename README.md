@@ -1,9 +1,14 @@
 # JK BMS Monitor
 
 Remote monitoring for LiFePO4 energy banks managed by JK BMS. An ESP32
-(XIAO-ESP32-S3) bridge reads parameters over BLE and posts them every 30s to
-this app's ingest API; the web app shows current values, a status
+(XIAO-ESP32-S3) bridge reads parameters over BLE and posts them to this
+app's ingest API; the web app shows current values, a status
 classification, and a history chart per location.
+
+**Status: MVP proven end-to-end on real hardware** — see
+`firmware/README.md` for the full protocol writeup (BLE handshake, verified
+byte offsets, single-connection gotcha). Live at
+[jkbms.timeflow.fun](https://jkbms.timeflow.fun).
 
 See `context/foundation/prd.md` for the full product spec, `context/foundation/tech-stack.md`
 for the stack decision record.
@@ -19,7 +24,7 @@ CyberFolks-hosted projects (see `context/foundation/tech-stack.md`).
 ```bash
 composer install
 cp .env.example .env
-# edit .env: APP_PASSWORD, DB_* credentials
+# edit .env: JKBMS_PASS, DB_* credentials
 ```
 
 Run the migrations in `database/migrations/` against your MySQL database, in
@@ -47,7 +52,21 @@ composer stan   # PHPStan (level 6)
 
 ## Deploy
 
-Shared hosting (CyberFolks), same mechanics as other projects on this host:
-`git push` + manual `git pull` / FTP on the server, `composer install
---no-dev --optimize-autoloader`. No CI/CD auto-deploy pipeline in MVP —
+Shared hosting (CyberFolks), via the `MiJu-CF-Deploy` skill: `git push` +
+manual `git pull` on the server. No CI/CD auto-deploy pipeline in MVP —
 GitHub Actions runs checks only, promotion is manual.
+
+**`composer install`/`update` does not work directly on CyberFolks** — a
+hardened-PHP quirk on their servers breaks Composer's dependency resolution
+host-wide (see `MiJu-CF-Deploy`'s skill doc for the full explanation).
+Build `vendor/` locally instead and `scp` it to the server:
+
+```bash
+composer install --no-dev --optimize-autoloader
+scp -r vendor composer.lock <user>@<host>:<remote_path>/
+```
+
+Document root on the server is `sites/<domain>/public` (the repo's own
+`public/` folder, since the whole repo is cloned straight into the site
+root) — **not** `public_html`, which is just CyberFolks' untouched default
+placeholder.
