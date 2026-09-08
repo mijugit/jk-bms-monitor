@@ -199,7 +199,10 @@ void postReading(const JkBmsReading &r) {
 
 void setup() {
     Serial.begin(115200);
-    delay(500);
+    delay(2000); // let the native USB CDC endpoint enumerate before printing
+    while (!Serial && millis() < 10000) {
+        delay(100);
+    }
     Serial.println("\nJK BMS Monitor firmware starting...");
 
     WiFi.mode(WIFI_STA);
