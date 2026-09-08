@@ -30,3 +30,7 @@ db.txt
 
 # PHPUnit cache
 .phpunit.result.cache
+
+# Firmware — real WiFi/device credentials and PlatformIO build artifacts
+firmware/include/secrets.h
+firmware/.pio/
