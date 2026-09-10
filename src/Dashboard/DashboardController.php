@@ -35,7 +35,8 @@ class DashboardController
                 'device'  => $device,
                 'latest'  => $latest,
                 'online'  => $this->devices->isOnline($device['last_seen_at'] ?? null, $offlineAfter),
-                'history' => $this->readings->historyForDevice((int) $device['id'], 'soc_percent'),
+                // History is fetched client-side per range button — see
+                // /api/history and public/js/app.js.
             ];
         }
 

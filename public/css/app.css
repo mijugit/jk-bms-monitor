@@ -394,9 +394,35 @@ h1 { font-size: 1.4rem; margin: 0 0 1rem; }
 .device-card__raw dt { color: var(--c-text-muted); }
 .device-card__raw dd { margin: 0; text-align: right; word-break: break-all; }
 
+.chart-range-buttons {
+    display: flex;
+    gap: .35rem;
+    margin-bottom: .5rem;
+}
+
+.chart-range-btn {
+    flex: 1;
+    padding: .3rem 0;
+    border-radius: 6px;
+    border: 1px solid var(--c-border);
+    background: rgba(255, 255, 255, .03);
+    color: var(--c-text-muted);
+    font-size: .75rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.chart-range-btn:hover { border-color: var(--c-text-muted); }
+
+.chart-range-btn.is-active {
+    border-color: var(--c-normal);
+    color: var(--c-normal);
+    background: rgba(61, 220, 132, .08);
+}
+
 .device-card__chart {
     width: 100%;
-    max-height: 160px;
+    max-height: 180px;
 }
 
 @media (max-width: 480px) {

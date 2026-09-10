@@ -161,7 +161,13 @@
             <span>Odczyt: <strong><?= htmlspecialchars((string) ($latest['recorded_at'] ?? '—')) ?></strong></span>
         </div>
 
-        <canvas class="device-card__chart" data-history='<?= htmlspecialchars(json_encode($row['history']), ENT_QUOTES) ?>'></canvas>
+        <div class="chart-range-buttons" data-device-id="<?= (int) $device['id'] ?>">
+            <button type="button" class="chart-range-btn is-active" data-range="1h">1h</button>
+            <button type="button" class="chart-range-btn" data-range="1d">1d</button>
+            <button type="button" class="chart-range-btn" data-range="1w">1w</button>
+            <button type="button" class="chart-range-btn" data-range="1m">1m</button>
+        </div>
+        <canvas class="device-card__chart" data-device-id="<?= (int) $device['id'] ?>"></canvas>
 
         <?php if (!empty($cellVoltages) || !empty($cellResistances) || !empty($raw)): ?>
         <details class="device-card__details">

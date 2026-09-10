@@ -57,27 +57,44 @@ class ReadingRepository
     }
 
     /**
-     * History of one parameter for a device, most recent last (chart data — FR-006).
+     * Time-bucketed SOC% + current history for a device, oldest first (chart
+     * data — FR-006). The device streams roughly one reading per second, so
+     * a raw week/month of rows would be hundreds of thousands of points —
+     * far too many to ship to the browser or plot usefully. Each supported
+     * range buckets readings server-side (SQL AVG per bucket) down to a
+     * chart-friendly point count instead.
      *
-     * @return list<array<string, mixed>>
+     * @return list<array{t: string, soc_percent: ?float, current_amps: ?float}>
      */
-    public function historyForDevice(int $deviceId, string $column, int $limit = 500): array
+    public function historyAggregated(int $deviceId, string $range): array
     {
-        $allowed = ['soc_percent', 'pack_voltage', 'current_amps', 'temp_max_c'];
-        if (!in_array($column, $allowed, true)) {
-            throw new \InvalidArgumentException("Unsupported history column: {$column}");
+        // range => [bucket size in seconds, lookback window for the SQL interval]
+        $ranges = [
+            '1h' => [20,    '1 HOUR'],
+            '1d' => [300,   '1 DAY'],
+            '1w' => [3600,  '7 DAY'],
+            '1m' => [21600, '30 DAY'],
+        ];
+        if (!isset($ranges[$range])) {
+            throw new \InvalidArgumentException("Unsupported history range: {$range}");
         }
+        [$bucketSeconds, $interval] = $ranges[$range];
 
         $stmt = Database::connection()->prepare(
-            "SELECT recorded_at, {$column} AS value FROM readings
+            "SELECT
+                FROM_UNIXTIME(FLOOR(UNIX_TIMESTAMP(recorded_at) / :bucket) * :bucket) AS t,
+                AVG(soc_percent) AS soc_percent,
+                AVG(current_amps) AS current_amps
+             FROM readings
              WHERE device_id = :device_id
-             ORDER BY recorded_at DESC
-             LIMIT :limit"
+               AND recorded_at >= DATE_SUB(NOW(), INTERVAL {$interval})
+             GROUP BY t
+             ORDER BY t ASC"
         );
+        $stmt->bindValue('bucket', $bucketSeconds, \PDO::PARAM_INT);
         $stmt->bindValue('device_id', $deviceId, \PDO::PARAM_INT);
-        $stmt->bindValue('limit', $limit, \PDO::PARAM_INT);
         $stmt->execute();
 
-        return array_reverse($stmt->fetchAll());
+        return $stmt->fetchAll();
     }
 }

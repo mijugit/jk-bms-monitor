@@ -11,11 +11,13 @@ declare(strict_types=1);
 
 use JKBMS\Auth\AuthController;
 use JKBMS\Dashboard\DashboardController;
+use JKBMS\History\HistoryController;
 use JKBMS\Ingest\IngestController;
 
 $auth      = new AuthController();
 $dashboard = new DashboardController();
 $ingest    = new IngestController();
+$history   = new HistoryController();
 
 // ------------------------------------------------------------------
 // Auth
@@ -30,6 +32,12 @@ $router->get('/logout', fn($req) => $auth->logout($req));
 // ------------------------------------------------------------------
 
 $router->get('/', fn($req) => $dashboard->index($req));
+
+// ------------------------------------------------------------------
+// History API — chart data for the time-range buttons (1h/1d/1w/1m)
+// ------------------------------------------------------------------
+
+$router->get('/api/history', fn($req) => $history->index($req));
 
 // ------------------------------------------------------------------
 // Ingest API — ESP32 bridges post readings here every 30s (FR-002)
