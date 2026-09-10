@@ -196,14 +196,47 @@ void requestReading() {
 // WiFi + HTTP
 // ---------------------------------------------------------------------
 
+// Scans for nearby networks and connects to whichever entry in
+// WIFI_NETWORKS (secrets.h) is actually in range — if more than one is,
+// picks the strongest signal. Lets one firmware image roam between
+// locations (e.g. home vs. a second site) without a reflash.
 void connectWifiIfNeeded() {
     if (WiFi.status() == WL_CONNECTED) return;
     static uint32_t lastAttempt = 0;
     if (millis() - lastAttempt < WIFI_RECONNECT_INTERVAL_MS) return;
     lastAttempt = millis();
-    Serial.println("Connecting to WiFi...");
+
     WiFi.mode(WIFI_STA);
-    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+    Serial.println("Scanning for known WiFi networks...");
+    int found = WiFi.scanNetworks();
+    if (found <= 0) {
+        Serial.println("No WiFi networks found in range.");
+        WiFi.scanDelete();
+        return;
+    }
+
+    int bestNetwork = -1;
+    int32_t bestRssi = INT32_MIN;
+    for (int i = 0; i < found; i++) {
+        String scannedSsid = WiFi.SSID(i);
+        for (int k = 0; k < WIFI_NETWORK_COUNT; k++) {
+            if (scannedSsid != WIFI_NETWORKS[k].ssid) continue;
+            int32_t rssi = WiFi.RSSI(i);
+            if (rssi > bestRssi) {
+                bestRssi = rssi;
+                bestNetwork = k;
+            }
+        }
+    }
+    WiFi.scanDelete();
+
+    if (bestNetwork < 0) {
+        Serial.println("None of the configured WiFi networks are in range.");
+        return;
+    }
+
+    Serial.printf("Connecting to '%s' (RSSI %d)...\n", WIFI_NETWORKS[bestNetwork].ssid, bestRssi);
+    WiFi.begin(WIFI_NETWORKS[bestNetwork].ssid, WIFI_NETWORKS[bestNetwork].password);
 }
 
 void postReading(const JkBmsReading &r) {
@@ -268,8 +301,9 @@ void setup() {
     }
     Serial.println("\nJK BMS Monitor firmware starting...");
 
-    WiFi.mode(WIFI_STA);
-    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+    // WiFi connection (scan + pick the strongest known network) happens in
+    // loop() via connectWifiIfNeeded() — it runs on the very first iteration
+    // too, so no need to duplicate it here.
 
     NimBLEDevice::init("JKBMS-Bridge");
 }
