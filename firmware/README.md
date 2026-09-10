@@ -13,7 +13,7 @@ Not part of the web/hosting stack decision (`context/foundation/tech-stack.md`)
 ```bash
 cd firmware
 cp include/secrets.h.example include/secrets.h
-# edit include/secrets.h: WIFI_SSID, WIFI_PASSWORD, DEVICE_KEY, INGEST_URL
+# edit include/secrets.h: WIFI_NETWORKS[] (one or more {ssid, password} pairs), DEVICE_KEY, INGEST_URL
 python -m platformio run --target upload --upload-port COMx
 python -m platformio device monitor --port COMx --baud 115200
 ```
@@ -37,6 +37,13 @@ table (see the main `README.md` § "Adding a device").
   frame, reassembles the (MTU-fragmented) 300-byte response, validates its
   checksum, and extracts pack voltage, current, SOC, temperature, per-cell
   voltages/resistances, balance current/status, and MOSFET state.
+- WiFi roaming — `secrets.h` holds a list of networks, not just one. On
+  each reconnect attempt the firmware scans and joins whichever configured
+  network is actually in range (strongest signal if more than one is) —
+  useful when the same device moves between locations (e.g. home vs. a
+  second site). Don't `#define WIFI_SSID`/`WIFI_PASSWORD` directly — a
+  second `#define` silently wins over the first at compile time instead of
+  giving you a real choice between networks.
 - `src/main.cpp` — connects WiFi and BLE (service `0xFFE0`), sends the
   enable + device-info + cell-info request sequence (see below), and POSTs
   each parsed reading as JSON to `INGEST_URL`. Reconnects both WiFi and BLE
