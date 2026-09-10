@@ -79,10 +79,14 @@ class ReadingRepository
             throw new \InvalidArgumentException("Unsupported history range: {$range}");
         }
         [$bucketSeconds, $interval] = $ranges[$range];
+        $bucket = (int) $bucketSeconds; // from the fixed whitelist above, not user input — safe to interpolate
 
+        // PDO native prepares (see Database.php: ATTR_EMULATE_PREPARES => false) reject
+        // the same named placeholder appearing twice in one query, which :bucket would
+        // need to (divide, then multiply back) — interpolate the validated int instead.
         $stmt = Database::connection()->prepare(
             "SELECT
-                FROM_UNIXTIME(FLOOR(UNIX_TIMESTAMP(recorded_at) / :bucket) * :bucket) AS t,
+                FROM_UNIXTIME(FLOOR(UNIX_TIMESTAMP(recorded_at) / {$bucket}) * {$bucket}) AS t,
                 AVG(soc_percent) AS soc_percent,
                 AVG(current_amps) AS current_amps
              FROM readings
@@ -91,7 +95,6 @@ class ReadingRepository
              GROUP BY t
              ORDER BY t ASC"
         );
-        $stmt->bindValue('bucket', $bucketSeconds, \PDO::PARAM_INT);
         $stmt->bindValue('device_id', $deviceId, \PDO::PARAM_INT);
         $stmt->execute();
 
