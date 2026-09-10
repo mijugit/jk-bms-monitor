@@ -20,6 +20,19 @@ use JKBMS\Reading\ReadingRepository;
  */
 class IngestController
 {
+    /**
+     * Floor on how often one device's readings are actually stored, regardless
+     * of how often it POSTs. FR-002 specifies a 30s cadence, but the JK BMS
+     * auto-streams a reading roughly once a second once its BLE session is
+     * unlocked (confirmed on real hardware) — the firmware's own 30s request
+     * timer only throttles when *it* asks for a reading, not how often the
+     * BMS pushes one or how often we forward it here. Until the firmware is
+     * fixed at the source (deferred — no device access right now), this is
+     * the backstop that keeps the table from filling at ~1 row/s. Slightly
+     * under 30 to tolerate jitter without ever under-shooting the cadence.
+     */
+    private const MIN_STORE_INTERVAL_SECONDS = 25;
+
     public function __construct(
         private readonly DeviceRepository $devices = new DeviceRepository(),
         private readonly ReadingRepository $readings = new ReadingRepository(),
@@ -39,6 +52,23 @@ class IngestController
             return;
         }
 
+        $deviceId = (int) $device['id'];
+        $this->devices->touchLastSeen($deviceId); // device is alive/reachable either way
+
+        $latest = $this->readings->latestForDevice($deviceId);
+        if ($latest !== null) {
+            $secondsSinceLast = time() - strtotime((string) $latest['recorded_at']);
+            if ($secondsSinceLast < self::MIN_STORE_INTERVAL_SECONDS) {
+                Response::json([
+                    'status' => $latest['status'],
+                    'stored' => false,
+                    'reason' => 'throttled',
+                    'retry_after_seconds' => self::MIN_STORE_INTERVAL_SECONDS - $secondsSinceLast,
+                ], 200);
+                return;
+            }
+        }
+
         $body = $req->jsonBody();
 
         $socPercent        = isset($body['soc_percent']) ? (float) $body['soc_percent'] : null;
@@ -56,9 +86,8 @@ class IngestController
             $currentAmps
         );
 
-        $this->readings->insert((int) $device['id'], $body, $status);
-        $this->devices->touchLastSeen((int) $device['id']);
+        $this->readings->insert($deviceId, $body, $status);
 
-        Response::json(['status' => $status], 201);
+        Response::json(['status' => $status, 'stored' => true], 201);
     }
 }
