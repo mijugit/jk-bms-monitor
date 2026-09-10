@@ -26,7 +26,7 @@
         $cellMinMv   = $latest['cell_voltage_min_mv'] ?? null;
         $cellMaxMv   = $latest['cell_voltage_max_mv'] ?? null;
         $voltDiffV   = ($cellMinMv !== null && $cellMaxMv !== null) ? ($cellMaxMv - $cellMinMv) / 1000 : null;
-        $powerW      = ($voltage !== null && $current !== null) ? $voltage * $current : null;
+        $powerW      = ($voltage !== null && $current !== null) ? abs($voltage * $current) : null; // magnitude — direction is shown via the Status label
 
         $chargeMosfetOn    = $raw['charge_mosfet_on'] ?? null;
         $dischargeMosfetOn = $raw['discharge_mosfet_on'] ?? null;
@@ -44,10 +44,35 @@
         $cellVoltages   = $raw['cell_voltages_mv'] ?? [];
         $cellResistances = $raw['cell_resistances_ohm'] ?? [];
 
-        // Circular SOC gauge: full-circle stroke-dasharray trick, starts at 12 o'clock.
+        // Speedometer-style SOC gauge: 270° arc (90° gap centered at the bottom),
+        // built with the stroke-dasharray trick — dasharray = "<visible arc> <rest>",
+        // then the whole circle is rotated so the arc starts at bottom-left (135°,
+        // measured clockwise from 3-o'clock, SVG's native circle start point).
+        $gaugeCx = 70;
+        $gaugeCy = 70;
         $gaugeRadius = 52;
+        $gaugeInnerRadius = 43;
+        $gaugeSweepDeg = 270;
+        $gaugeStartDeg = 135;
         $gaugeCircumference = 2 * M_PI * $gaugeRadius;
-        $gaugeOffset = $gaugeCircumference * (1 - $socPercent / 100);
+        $gaugeInnerCircumference = 2 * M_PI * $gaugeInnerRadius;
+        $gaugeArcLen = $gaugeCircumference * ($gaugeSweepDeg / 360);
+        $gaugeInnerArcLen = $gaugeInnerCircumference * ($gaugeSweepDeg / 360);
+        $gaugeFillLen = $gaugeArcLen * ($socPercent / 100);
+        $gaugeInnerFillLen = $gaugeInnerArcLen * ($socPercent / 100);
+
+        $jkGaugePoint = static function (float $cx, float $cy, float $r, float $angleDeg): array {
+            $rad = deg2rad($angleDeg);
+            return [round($cx + $r * cos($rad), 2), round($cy + $r * sin($rad), 2)];
+        };
+
+        $gaugeTicks = [];
+        $gaugeTickCount = 24;
+        for ($i = 0; $i <= $gaugeTickCount; $i++) {
+            $gaugeTicks[] = $jkGaugePoint($gaugeCx, $gaugeCy, $gaugeRadius - 15, $gaugeStartDeg + $gaugeSweepDeg * $i / $gaugeTickCount);
+        }
+        [$gaugeLabel0X, $gaugeLabel0Y]     = $jkGaugePoint($gaugeCx, $gaugeCy, $gaugeRadius + 13, $gaugeStartDeg);
+        [$gaugeLabel100X, $gaugeLabel100Y] = $jkGaugePoint($gaugeCx, $gaugeCy, $gaugeRadius + 13, $gaugeStartDeg + $gaugeSweepDeg);
     ?>
     <section class="device-card device-card--<?= htmlspecialchars($status ?? 'unknown') ?>">
         <header class="device-card__header">
@@ -66,21 +91,49 @@
         </div>
 
         <div class="gauge">
-            <svg viewBox="0 0 120 120">
-                <circle class="gauge__track" cx="60" cy="60" r="<?= $gaugeRadius ?>" />
+            <svg viewBox="0 0 140 140">
+                <defs>
+                    <linearGradient id="gaugeGradient-<?= (int) $device['id'] ?>" x1="0" y1="70" x2="140" y2="70" gradientUnits="userSpaceOnUse">
+                        <stop offset="0%"   stop-color="#3ddc84" />
+                        <stop offset="50%"  stop-color="#2fd0c9" />
+                        <stop offset="100%" stop-color="#4fb8ff" />
+                    </linearGradient>
+                </defs>
+
+                <!-- tick/scale dots -->
+                <?php foreach ($gaugeTicks as [$tx, $ty]): ?>
+                <circle class="gauge__tick" cx="<?= $tx ?>" cy="<?= $ty ?>" r="1.3" />
+                <?php endforeach; ?>
+
+                <!-- background track (full 270° range, dim) -->
+                <circle class="gauge__track" cx="<?= $gaugeCx ?>" cy="<?= $gaugeCy ?>" r="<?= $gaugeRadius ?>"
+                        stroke-dasharray="<?= round($gaugeArcLen, 2) ?> <?= round($gaugeCircumference - $gaugeArcLen, 2) ?>"
+                        transform="rotate(<?= $gaugeStartDeg ?> <?= $gaugeCx ?> <?= $gaugeCy ?>)" />
+
+                <!-- filled portion (outer, thick, gradient or status color) -->
                 <circle class="gauge__fill gauge__fill--<?= htmlspecialchars($status ?? 'unknown') ?>"
-                        cx="60" cy="60" r="<?= $gaugeRadius ?>"
-                        stroke-dasharray="<?= round($gaugeCircumference, 2) ?>"
-                        stroke-dashoffset="<?= round($gaugeOffset, 2) ?>" />
+                        cx="<?= $gaugeCx ?>" cy="<?= $gaugeCy ?>" r="<?= $gaugeRadius ?>"
+                        stroke="<?= $status === 'normal' ? 'url(#gaugeGradient-' . (int) $device['id'] . ')' : 'currentColor' ?>"
+                        stroke-dasharray="<?= round($gaugeFillLen, 2) ?> <?= round($gaugeCircumference - $gaugeFillLen, 2) ?>"
+                        transform="rotate(<?= $gaugeStartDeg ?> <?= $gaugeCx ?> <?= $gaugeCy ?>)" />
+
+                <!-- inner accent ring, thinner, same fill fraction -->
+                <circle class="gauge__fill-inner gauge__fill-inner--<?= htmlspecialchars($status ?? 'unknown') ?>"
+                        cx="<?= $gaugeCx ?>" cy="<?= $gaugeCy ?>" r="<?= $gaugeInnerRadius ?>"
+                        stroke-dasharray="<?= round($gaugeInnerFillLen, 2) ?> <?= round($gaugeInnerCircumference - $gaugeInnerFillLen, 2) ?>"
+                        transform="rotate(<?= $gaugeStartDeg ?> <?= $gaugeCx ?> <?= $gaugeCy ?>)" />
+
+                <text class="gauge__scale-label" x="<?= $gaugeLabel0X ?>" y="<?= $gaugeLabel0Y ?>" text-anchor="middle" dominant-baseline="middle">0</text>
+                <text class="gauge__scale-label" x="<?= $gaugeLabel100X ?>" y="<?= $gaugeLabel100Y ?>" text-anchor="middle" dominant-baseline="middle">100</text>
             </svg>
             <div class="gauge__label">
-                <span class="gauge__percent"><?= $soc !== null ? htmlspecialchars((string) round((float) $soc)) : '—' ?><small>%</small></span>
+                <span class="gauge__percent gauge__percent--<?= htmlspecialchars($status ?? 'unknown') ?>"><?= $soc !== null ? htmlspecialchars((string) round((float) $soc)) : '—' ?><small>%</small></span>
             </div>
         </div>
 
         <div class="gauge__pills">
-            <span class="pill"><?= $voltage !== null ? htmlspecialchars((string) $voltage) : '—' ?> V</span>
-            <span class="pill"><?= $current !== null ? htmlspecialchars((string) $current) : '—' ?> A</span>
+            <span class="pill pill--<?= htmlspecialchars($status ?? 'unknown') ?>"><?= $voltage !== null ? htmlspecialchars((string) $voltage) : '—' ?> V</span>
+            <span class="pill pill--<?= htmlspecialchars($status ?? 'unknown') ?>"><?= $current !== null ? htmlspecialchars((string) $current) : '—' ?> A</span>
         </div>
 
         <p class="status-message status-message--<?= htmlspecialchars($status ?? 'unknown') ?>"><?= htmlspecialchars($statusText) ?></p>
