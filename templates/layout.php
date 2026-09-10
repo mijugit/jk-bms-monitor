@@ -19,7 +19,10 @@ $asset = static function (string $path): string {
 <body>
 <header class="site-header">
     <div class="container">
-        <a class="site-logo" href="/">JK BMS Monitor</a>
+        <a class="site-logo" href="/">
+            <video class="site-logo__video" src="/videos/battery-charging.webm" autoplay muted loop playsinline></video>
+            JK BMS Monitor
+        </a>
         <?php if (!empty($_SESSION['authenticated'])): ?>
         <nav class="site-nav">
             <a href="/logout">Wyloguj</a>

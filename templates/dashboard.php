@@ -1,7 +1,10 @@
 <h1>Banki energii</h1>
 
 <?php if (empty($rows)): ?>
-<p>Brak zarejestrowanych urządzeń. Dodaj wiersz w tabeli <code>devices</code> (nazwa lokalizacji + <code>device_key</code>) i skonfiguruj nim firmware ESP32.</p>
+<div class="empty-state">
+    <video class="empty-state__video" src="/videos/battery-charging.webm" autoplay muted loop playsinline></video>
+    <p>Brak zarejestrowanych urządzeń. Dodaj wiersz w tabeli <code>devices</code> (nazwa lokalizacji + <code>device_key</code>) i skonfiguruj nim firmware ESP32.</p>
+</div>
 <?php endif; ?>
 
 <div class="device-grid">
