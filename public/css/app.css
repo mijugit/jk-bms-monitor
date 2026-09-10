@@ -381,14 +381,11 @@ h1 { font-size: 1.4rem; margin: 0 0 1rem; }
 .cell-chip__value--low  { color: var(--c-critical); }
 
 .device-card__raw {
-    font-size: .8rem;
-    margin-bottom: .75rem;
-}
-
-.device-card__raw dl {
     display: grid;
     grid-template-columns: auto 1fr;
     gap: .15rem .5rem;
+    font-size: .8rem;
+    margin-bottom: .75rem;
 }
 
 .device-card__raw dt { color: var(--c-text-muted); }

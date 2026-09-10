@@ -207,8 +207,14 @@
             <dl class="device-card__raw">
                 <?php foreach ($raw as $key => $value): ?>
                     <?php if (in_array($key, ['cell_voltages_mv', 'cell_resistances_ohm'], true)) continue; ?>
+                    <?php
+                        if (is_bool($value)) $displayValue = $value ? 'true' : 'false';
+                        elseif ($value === null) $displayValue = '—';
+                        elseif (is_scalar($value)) $displayValue = (string) $value;
+                        else $displayValue = json_encode($value);
+                    ?>
                 <dt><?= htmlspecialchars((string) $key) ?></dt>
-                <dd><?= htmlspecialchars(is_scalar($value) ? (string) $value : json_encode($value)) ?></dd>
+                <dd><?= htmlspecialchars($displayValue) ?></dd>
                 <?php endforeach; ?>
             </dl>
         </details>
