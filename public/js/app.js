@@ -124,64 +124,12 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    async function refresh() {
-        if (refreshing || document.hidden || sessionExpired) return;
+    function refresh() {
+        if (refreshing || document.hidden) return;
         refreshing = true;
-        try {
-            const response = await fetch('/', { cache: 'no-store', signal: AbortSignal.timeout(15000) });
-            if (response.redirected && new URL(response.url).pathname === '/login') {
-                sessionExpired = true;
-                throw new Error('Session expired');
-            }
-            if (!response.ok) throw new Error('Dashboard unavailable');
-            const documentNext = new DOMParser().parseFromString(await response.text(), 'text/html');
-            const nextGrid = documentNext.querySelector('.device-grid');
-            if (!nextGrid) throw new Error('Invalid dashboard');
-            const ids = new Set();
-            nextGrid.querySelectorAll('.device-card').forEach(nextCard => {
-                const id = nextCard.dataset.deviceId;
-                ids.add(id);
-                const card = grid.querySelector(`.device-card[data-device-id="${id}"]`);
-                if (!card) { grid.append(nextCard); return; }
-                card.className = nextCard.className;
-                card.dataset.seenAge = nextCard.dataset.seenAge;
-                card.querySelector('.device-card__live').replaceWith(nextCard.querySelector('.device-card__live'));
-                if (!card.querySelector('.history-panel') && nextCard.querySelector('.history-panel')) card.append(nextCard.querySelector('.history-panel'));
-                const details = card.querySelector('.device-card__details');
-                const nextDetails = nextCard.querySelector('.device-card__details');
-                if (details && nextDetails && !details.contains(document.activeElement)) {
-                    nextDetails.open = details.open;
-                    nextDetails.querySelector('.raw-details').open = details.querySelector('.raw-details').open;
-                    details.replaceWith(nextDetails);
-                } else if (!details && nextDetails) card.append(nextDetails);
-            });
-            grid.querySelectorAll('.device-card').forEach(card => {
-                if (!ids.has(card.dataset.deviceId)) {
-                    const entry = charts.get(card.dataset.deviceId);
-                    if (entry?.chart) entry.chart.destroy();
-                    charts.delete(card.dataset.deviceId);
-                    card.remove();
-                }
-            });
-            grid.querySelector(':scope > .empty-state')?.remove();
-            if (!ids.size && nextGrid.querySelector('.empty-state')) grid.append(nextGrid.querySelector('.empty-state'));
-            receivedAt = performance.now();
-            refreshStatus.classList.remove('is-error');
-            refreshStatus.textContent = 'Odczyty odświeżane co 30 s';
-            charts.forEach(loadChart);
-            initCharts();
-        } catch {
-            refreshStatus.classList.add('is-error');
-            refreshStatus.textContent = sessionExpired ? 'Sesja wygasła. Zaloguj się ponownie.' : 'Nie udało się odświeżyć danych. Ponowię za 30 s.';
-            if (sessionExpired) {
-                const link = document.createElement('a');
-                link.href = '/login'; link.textContent = ' Zaloguj';
-                refreshStatus.append(link);
-            }
-        } finally {
-            refreshing = false;
-            updateAges();
-        }
+        // A full navigation is deliberate: it follows the same reliable path as F5,
+        // bypasses DOM patching edge cases, and always re-reads current BMS values.
+        window.location.reload();
     }
     initCharts();
     updateAges();
