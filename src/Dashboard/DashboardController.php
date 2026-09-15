@@ -34,12 +34,13 @@ class DashboardController
             $rows[] = [
                 'device'  => $device,
                 'latest'  => $latest,
-                'online'  => $this->devices->isOnline($device['last_seen_at'] ?? null, $offlineAfter),
+                'online'  => isset($device['last_seen_age_seconds']) && (int) $device['last_seen_age_seconds'] <= $offlineAfter,
                 // History is fetched client-side per range button — see
                 // /api/history and public/js/app.js.
             ];
         }
 
-        Response::view('dashboard', ['rows' => $rows]);
+        header('Cache-Control: no-store');
+        Response::view('dashboard', ['rows' => $rows, 'offlineAfter' => $offlineAfter]);
     }
 }

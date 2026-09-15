@@ -1,117 +1,167 @@
-// Renders one Chart.js line chart per .device-card__chart canvas, fed by
-// /api/history (FR-006). Each card has its own 1h/1d/1w/1m range buttons —
-// clicking one re-fetches that device's history and updates the chart
-// in place (no full page reload).
 document.addEventListener('DOMContentLoaded', () => {
-    if (typeof Chart === 'undefined') {
-        return;
+    const grid = document.querySelector('.device-grid');
+    if (!grid) return;
+    const refreshStatus = document.querySelector('#refresh-status');
+    const charts = new Map();
+    let receivedAt = performance.now();
+    let refreshing = false;
+    let sessionExpired = false;
+    const offlineAfter = Number(grid.dataset.offlineAfter || 180);
+    const elapsed = () => Math.floor((performance.now() - receivedAt) / 1000);
+    const ageLabel = seconds => seconds < 60 ? `${seconds} s temu` : seconds < 3600 ? `${Math.floor(seconds / 60)} min temu` : seconds < 86400 ? `${Math.floor(seconds / 3600)} godz. temu` : `${Math.floor(seconds / 86400)} dni temu`;
+
+    function updateAges() {
+        grid.querySelectorAll('[data-reading-age]').forEach(node => {
+            if (node.dataset.readingAge !== '') node.textContent = ageLabel(Number(node.dataset.readingAge) + elapsed());
+        });
+        grid.querySelectorAll('.device-card').forEach(card => {
+            if (card.dataset.seenAge === '' || Number(card.dataset.seenAge) + elapsed() > offlineAfter) {
+                card.classList.add('is-stale');
+                const badge = card.querySelector('.badge');
+                badge.className = 'badge badge--offline';
+                badge.textContent = 'Brak połączenia';
+                const message = card.querySelector('.status-message');
+                if (message && !message.textContent.startsWith('Brak połączenia')) {
+                    const alarm = card.matches('.device-card--warning, .device-card--critical');
+                    message.textContent = 'Brak połączenia — widoczne są ostatnie zapisane dane.' + (alarm ? ` Ostatni odczyt: ${message.textContent}.` : '');
+                }
+                const label = card.querySelector('.power-display .metric-label');
+                if (label) label.textContent = 'Ostatnia moc banku';
+            }
+        });
     }
 
-    // "2026-09-10 20:15:00" -> "20:15" (short ranges) or "09-10" (long ranges).
-    function formatLabel(t, range) {
-        if (range === '1h' || range === '1d') {
-            return t.slice(11, 16);
-        }
-        return t.slice(5, 10);
-    }
-
-    document.querySelectorAll('.device-card__chart').forEach((canvas) => {
-        const deviceId = canvas.dataset.deviceId;
-        if (!deviceId) {
+    async function loadChart(entry) {
+        const request = ++entry.request;
+        const feedback = entry.panel.querySelector('.chart-feedback');
+        if (typeof Chart === 'undefined') {
+            feedback.textContent = 'Nie udało się załadować wykresu. Odśwież stronę, aby spróbować ponownie.';
             return;
         }
-
-        const card = canvas.closest('.device-card');
-        const buttonsWrap = card ? card.querySelector('.chart-range-buttons') : null;
-        let chart = null;
-
-        function loadRange(range) {
-            fetch(`/api/history?device_id=${encodeURIComponent(deviceId)}&range=${encodeURIComponent(range)}`)
-                .then((res) => res.json())
-                .then((data) => {
-                    const points = Array.isArray(data.points) ? data.points : [];
-                    const labels = points.map((p) => formatLabel(p.t, range));
-                    const soc = points.map((p) => (p.soc_percent !== null ? Number(p.soc_percent) : null));
-                    const current = points.map((p) => (p.current_amps !== null ? Number(p.current_amps) : null));
-
-                    if (chart) {
-                        chart.data.labels = labels;
-                        chart.data.datasets[0].data = soc;
-                        chart.data.datasets[1].data = current;
-                        chart.update();
-                        return;
-                    }
-
-                    chart = new Chart(canvas, {
-                        type: 'line',
-                        data: {
-                            labels,
-                            datasets: [
-                                {
-                                    label: 'SOC %',
-                                    data: soc,
-                                    borderColor: '#3ddc84',
-                                    yAxisID: 'ySoc',
-                                    tension: 0.25,
-                                    pointRadius: 0,
-                                    spanGaps: true,
-                                },
-                                {
-                                    label: 'Prąd (A)',
-                                    data: current,
-                                    borderColor: '#4fb8ff',
-                                    yAxisID: 'yCurrent',
-                                    tension: 0.25,
-                                    pointRadius: 0,
-                                    spanGaps: true,
-                                },
-                            ],
+        if (!entry.chart) feedback.textContent = 'Ładowanie historii…';
+        try {
+            const response = await fetch(`/api/history?device_id=${encodeURIComponent(entry.id)}&range=${entry.range}`, { cache: 'no-store', signal: AbortSignal.timeout(15000) });
+            if (!response.ok || response.redirected) throw new Error('History unavailable');
+            const data = await response.json();
+            if (!Array.isArray(data.points)) throw new Error('Invalid history');
+            if (request !== entry.request || !entry.panel.isConnected) return;
+            const points = data.points;
+            const labels = points.map(p => entry.range === '1h' || entry.range === '1d' ? p.t.slice(11, 16) : `${p.t.slice(8, 10)}.${p.t.slice(5, 7)}`);
+            const datasets = [
+                { label: 'Naładowanie (%)', data: points.map(p => p.soc_percent == null ? null : Number(p.soc_percent)), borderColor: '#3ddc84', yAxisID: 'soc' },
+                { label: 'Prąd (A)', data: points.map(p => p.current_amps == null ? null : Number(p.current_amps)), borderColor: '#68bfff', yAxisID: 'current' },
+            ].map(dataset => ({ ...dataset, borderWidth: 2, pointRadius: 0, pointHitRadius: 12, tension: .15, spanGaps: false }));
+            if (entry.chart) {
+                entry.chart.data = { labels, datasets };
+                entry.chart.update('none');
+            } else {
+                entry.chart = new Chart(entry.panel.querySelector('canvas'), {
+                    type: 'line', data: { labels, datasets },
+                    options: {
+                        locale: 'pl-PL', responsive: true, maintainAspectRatio: false, animation: false,
+                        interaction: { mode: 'index', intersect: false },
+                        plugins: { legend: { labels: { boxWidth: 10, color: '#9aa0ab', font: { size: 11 } } }, tooltip: { callbacks: { title: items => entry.points[items[0]?.dataIndex]?.t || '' } } },
+                        scales: {
+                            x: { ticks: { maxTicksLimit: 5, maxRotation: 0, color: '#9aa0ab', font: { size: 11 } }, grid: { display: false } },
+                            soc: { position: 'left', min: 0, max: 100, ticks: { color: '#9aa0ab', font: { size: 11 } }, grid: { color: '#ffffff08' } },
+                            current: { position: 'right', ticks: { color: '#68bfff', font: { size: 11 } }, grid: { drawOnChartArea: false } },
                         },
-                        options: {
-                            responsive: true,
-                            interaction: { mode: 'index', intersect: false },
-                            plugins: {
-                                legend: {
-                                    display: true,
-                                    labels: { boxWidth: 10, font: { size: 10 }, color: '#9aa0ab' },
-                                },
-                            },
-                            scales: {
-                                x: {
-                                    display: true,
-                                    ticks: { maxTicksLimit: 6, font: { size: 9 }, color: '#9aa0ab' },
-                                    grid: { display: false },
-                                },
-                                ySoc: {
-                                    position: 'left',
-                                    beginAtZero: true,
-                                    suggestedMax: 100,
-                                    ticks: { font: { size: 9 }, color: '#3ddc84' },
-                                },
-                                yCurrent: {
-                                    position: 'right',
-                                    grid: { drawOnChartArea: false },
-                                    ticks: { font: { size: 9 }, color: '#4fb8ff' },
-                                },
-                            },
-                        },
-                    });
-                })
-                .catch(() => {});
-        }
-
-        if (buttonsWrap) {
-            buttonsWrap.addEventListener('click', (e) => {
-                const btn = e.target.closest('.chart-range-btn');
-                if (!btn || !buttonsWrap.contains(btn)) {
-                    return;
-                }
-                buttonsWrap.querySelectorAll('.chart-range-btn').forEach((b) => b.classList.remove('is-active'));
-                btn.classList.add('is-active');
-                loadRange(btn.dataset.range);
+                    },
+                });
+            }
+            entry.points = points;
+            feedback.textContent = points.length ? '' : 'Brak odczytów w wybranym okresie.';
+            entry.panel.querySelectorAll('[data-range]').forEach(button => {
+                const active = button.dataset.range === entry.range;
+                button.classList.toggle('is-active', active);
+                button.setAttribute('aria-pressed', String(active));
             });
+        } catch {
+            if (request !== entry.request) return;
+            // Never leave the old range's curve labelled as the newly requested range.
+            if (entry.chart) { entry.chart.destroy(); entry.chart = null; }
+            feedback.textContent = 'Nie udało się pobrać historii. Wybierz zakres, aby ponowić.';
         }
+    }
 
-        loadRange('1h');
-    });
+    function initCharts() {
+        grid.querySelectorAll('.history-panel').forEach(panel => {
+            const id = panel.closest('.device-card').dataset.deviceId;
+            if (charts.has(id)) return;
+            const entry = { id, panel, range: '1h', chart: null, request: 0, points: [] };
+            charts.set(id, entry);
+            panel.querySelector('.chart-range-buttons').addEventListener('click', event => {
+                const button = event.target.closest('[data-range]');
+                if (!button) return;
+                entry.range = button.dataset.range;
+                loadChart(entry);
+            });
+            loadChart(entry);
+        });
+    }
+
+    async function refresh() {
+        if (refreshing || document.hidden || sessionExpired) return;
+        refreshing = true;
+        try {
+            const response = await fetch('/', { cache: 'no-store', signal: AbortSignal.timeout(15000) });
+            if (response.redirected && new URL(response.url).pathname === '/login') {
+                sessionExpired = true;
+                throw new Error('Session expired');
+            }
+            if (!response.ok) throw new Error('Dashboard unavailable');
+            const documentNext = new DOMParser().parseFromString(await response.text(), 'text/html');
+            const nextGrid = documentNext.querySelector('.device-grid');
+            if (!nextGrid) throw new Error('Invalid dashboard');
+            const ids = new Set();
+            nextGrid.querySelectorAll('.device-card').forEach(nextCard => {
+                const id = nextCard.dataset.deviceId;
+                ids.add(id);
+                const card = grid.querySelector(`.device-card[data-device-id="${id}"]`);
+                if (!card) { grid.append(nextCard); return; }
+                card.className = nextCard.className;
+                card.dataset.seenAge = nextCard.dataset.seenAge;
+                card.querySelector('.device-card__live').replaceWith(nextCard.querySelector('.device-card__live'));
+                if (!card.querySelector('.history-panel') && nextCard.querySelector('.history-panel')) card.append(nextCard.querySelector('.history-panel'));
+                const details = card.querySelector('.device-card__details');
+                const nextDetails = nextCard.querySelector('.device-card__details');
+                if (details && nextDetails && !details.contains(document.activeElement)) {
+                    nextDetails.open = details.open;
+                    nextDetails.querySelector('.raw-details').open = details.querySelector('.raw-details').open;
+                    details.replaceWith(nextDetails);
+                } else if (!details && nextDetails) card.append(nextDetails);
+            });
+            grid.querySelectorAll('.device-card').forEach(card => {
+                if (!ids.has(card.dataset.deviceId)) {
+                    const entry = charts.get(card.dataset.deviceId);
+                    if (entry?.chart) entry.chart.destroy();
+                    charts.delete(card.dataset.deviceId);
+                    card.remove();
+                }
+            });
+            grid.querySelector(':scope > .empty-state')?.remove();
+            if (!ids.size && nextGrid.querySelector('.empty-state')) grid.append(nextGrid.querySelector('.empty-state'));
+            receivedAt = performance.now();
+            refreshStatus.classList.remove('is-error');
+            refreshStatus.textContent = 'Odczyty odświeżane co 30 s';
+            charts.forEach(loadChart);
+            initCharts();
+        } catch {
+            refreshStatus.classList.add('is-error');
+            refreshStatus.textContent = sessionExpired ? 'Sesja wygasła. Zaloguj się ponownie.' : 'Nie udało się odświeżyć danych. Ponowię za 30 s.';
+            if (sessionExpired) {
+                const link = document.createElement('a');
+                link.href = '/login'; link.textContent = ' Zaloguj';
+                refreshStatus.append(link);
+            }
+        } finally {
+            refreshing = false;
+            updateAges();
+        }
+    }
+    initCharts();
+    updateAges();
+    setInterval(updateAges, 1000);
+    setInterval(refresh, 30000);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) refresh(); });
 });

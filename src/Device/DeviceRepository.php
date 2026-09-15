@@ -31,7 +31,7 @@ class DeviceRepository
      */
     public function all(): array
     {
-        $stmt = Database::connection()->query('SELECT * FROM devices ORDER BY name ASC');
+        $stmt = Database::connection()->query('SELECT *, TIMESTAMPDIFF(SECOND, last_seen_at, NOW()) AS last_seen_age_seconds FROM devices ORDER BY name ASC');
         return $stmt->fetchAll();
     }
 

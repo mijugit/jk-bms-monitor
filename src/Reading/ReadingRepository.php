@@ -47,7 +47,7 @@ class ReadingRepository
     public function latestForDevice(int $deviceId): ?array
     {
         $stmt = Database::connection()->prepare(
-            'SELECT * FROM readings WHERE device_id = :device_id
+            'SELECT *, TIMESTAMPDIFF(SECOND, recorded_at, NOW()) AS reading_age_seconds FROM readings WHERE device_id = :device_id
              ORDER BY recorded_at DESC LIMIT 1'
         );
         $stmt->execute(['device_id' => $deviceId]);
