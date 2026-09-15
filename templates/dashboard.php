@@ -43,6 +43,15 @@ $socColor = static function (float $percent): string {
     $max = $latest['cell_voltage_max_mv'] ?? null;
     $cellSpread = $max !== null && $min !== null ? $max - $min : null;
     $age = isset($latest['reading_age_seconds']) ? max(0, (int) $latest['reading_age_seconds']) : null;
+    $refreshWindow = 30;
+    $refreshProgress = $age === null ? 0 : min(100, ($age % $refreshWindow) / $refreshWindow * 100);
+    $refreshPath = [];
+    for ($point = 0; $point <= 72; $point++) {
+        $angle = -M_PI / 2 + (2 * M_PI * $point / 72);
+        $radius = 40 + sin($point * 2.7) * 1.25 + sin($point * 5.1) * .7;
+        $refreshPath[] = sprintf('%s%.2f %s%.2f', $point === 0 ? 'M ' : 'L ', 60 + cos($angle) * $radius, ' ', 60 + sin($angle) * $radius);
+    }
+    $refreshPath = implode('', $refreshPath);
     $ageText = $age === null ? 'brak odczytu' : ($age < 60 ? $age . ' s temu' : ($age < 3600 ? floor($age / 60) . ' min temu' : ($age < 86400 ? floor($age / 3600) . ' godz. temu' : floor($age / 86400) . ' dni temu')));
     $stats = [
         ['Napięcie banku', $voltage, 2, 'V'], ['Prąd', $current, 2, 'A'],
@@ -69,6 +78,7 @@ $socColor = static function (float $percent): string {
                         <?php for ($level = 0; $level < $socPercent; $level += 1): ?>
                         <circle class="soc-ring__fill" style="stroke: <?= $socColor($level) ?>" cx="60" cy="60" r="51" pathLength="100" stroke-dasharray="<?= min(1.4, $socPercent - $level) ?> 100" stroke-dashoffset="<?= -$level ?>" transform="rotate(-90 60 60)"/>
                         <?php endfor; ?>
+                        <path class="refresh-zigzag" data-refresh-progress="<?= $refreshProgress ?>" d="<?= htmlspecialchars($refreshPath) ?>" pathLength="100" stroke-dasharray="<?= $refreshProgress ?> 100"/>
                     </svg>
                     <strong><?= $number($soc, 0) ?><small>%</small></strong>
                 </div>

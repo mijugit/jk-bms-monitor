@@ -9,10 +9,18 @@ document.addEventListener('DOMContentLoaded', () => {
     const offlineAfter = Number(grid.dataset.offlineAfter || 180);
     const elapsed = () => Math.floor((performance.now() - receivedAt) / 1000);
     const ageLabel = seconds => seconds < 60 ? `${seconds} s temu` : seconds < 3600 ? `${Math.floor(seconds / 60)} min temu` : seconds < 86400 ? `${Math.floor(seconds / 3600)} godz. temu` : `${Math.floor(seconds / 86400)} dni temu`;
+    const refreshWindow = 30;
 
     function updateAges() {
         grid.querySelectorAll('[data-reading-age]').forEach(node => {
             if (node.dataset.readingAge !== '') node.textContent = ageLabel(Number(node.dataset.readingAge) + elapsed());
+        });
+        grid.querySelectorAll('.refresh-zigzag').forEach(path => {
+            const age = Number(path.closest('.device-card')?.querySelector('[data-reading-age]')?.dataset.readingAge);
+            if (!Number.isFinite(age)) return;
+            const progress = ((age + elapsed()) % refreshWindow) / refreshWindow * 100;
+            path.style.strokeDasharray = `${progress} 100`;
+            path.dataset.refreshProgress = String(progress);
         });
         grid.querySelectorAll('.device-card').forEach(card => {
             if (card.dataset.seenAge === '' || Number(card.dataset.seenAge) + elapsed() > offlineAfter) {
