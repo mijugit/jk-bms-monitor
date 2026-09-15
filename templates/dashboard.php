@@ -1,5 +1,18 @@
 <?php
 $number = static fn($value, int $precision = 1): string => $value === null ? '—' : number_format((float) $value, $precision, ',', ' ');
+// Colour follows charge level; it is independent of the bank's alarm status.
+$socColor = static function (float $percent): string {
+    $stops = [[0, [255, 77, 79]], [35, [255, 99, 71]], [40, [255, 176, 32]], [60, [255, 207, 64]], [70, [61, 220, 132]], [100, [61, 220, 132]]];
+    for ($i = 1; $i < count($stops); $i++) {
+        if ($percent <= $stops[$i][0]) {
+            [$start, $from] = $stops[$i - 1];
+            [$end, $to] = $stops[$i];
+            $ratio = max(0, ($percent - $start) / ($end - $start));
+            return sprintf('#%02x%02x%02x', ...array_map(static fn($a, $b) => (int) round($a + ($b - $a) * $ratio), $from, $to));
+        }
+    }
+    return '#3ddc84';
+};
 ?>
 <div class="dashboard-heading">
     <div><p class="eyebrow">Monitor energii</p><h1>Twoje banki energii</h1></div>
@@ -22,10 +35,13 @@ $number = static fn($value, int $precision = 1): string => $value === null ? '�
     $current = $latest['current_amps'] ?? null;
     $power = $voltage !== null && $current !== null ? abs((float) $voltage * (float) $current) : null;
     $direction = $current === null ? 'Brak danych' : ($current > 0.05 ? 'Ładowanie' : ($current < -0.05 ? 'Rozładowanie' : 'Spoczynek'));
+    $powerLabel = $current === null ? 'Moc — brak kierunku' : ($current > 0 ? 'Moc dostarczana do banku' : ($current < 0 ? 'Moc pobierana z banku' : 'Moc — brak przepływu'));
+    $socPercent = $soc === null ? 0 : max(0, min(100, (float) $soc));
     $statusText = ['normal' => 'Parametry w normie', 'warning' => 'Ostrzeżenie — sprawdź parametry banku', 'critical' => 'Stan krytyczny — sprawdź bank natychmiast'][$status] ?? 'Brak danych o stanie banku';
     if (!$online) $statusText = 'Brak połączenia — widoczne są ostatnie zapisane dane.' . (in_array($status, ['warning', 'critical'], true) ? ' Ostatni odczyt: ' . $statusText . '.' : '');
     $min = $latest['cell_voltage_min_mv'] ?? null;
     $max = $latest['cell_voltage_max_mv'] ?? null;
+    $cellSpread = $max !== null && $min !== null ? $max - $min : null;
     $age = isset($latest['reading_age_seconds']) ? max(0, (int) $latest['reading_age_seconds']) : null;
     $ageText = $age === null ? 'brak odczytu' : ($age < 60 ? $age . ' s temu' : ($age < 3600 ? floor($age / 60) . ' min temu' : ($age < 86400 ? floor($age / 3600) . ' godz. temu' : floor($age / 86400) . ' dni temu')));
     $stats = [
@@ -48,13 +64,18 @@ $number = static fn($value, int $precision = 1): string => $value === null ? '�
         <div class="energy-overview">
             <div class="soc-display">
                 <div class="soc-ring">
-                    <svg viewBox="0 0 120 120" aria-hidden="true"><circle class="soc-ring__track" cx="60" cy="60" r="51"/><circle class="soc-ring__fill" cx="60" cy="60" r="51" pathLength="100" stroke-dasharray="<?= $soc === null ? 0 : max(0, min(100, (float) $soc)) ?> 100" transform="rotate(-90 60 60)"/></svg>
+                    <svg viewBox="0 0 120 120" aria-hidden="true">
+                        <circle class="soc-ring__track" cx="60" cy="60" r="51"/>
+                        <?php for ($level = 0; $level < $socPercent; $level += 1): ?>
+                        <circle class="soc-ring__fill" style="stroke: <?= $socColor($level) ?>" cx="60" cy="60" r="51" pathLength="100" stroke-dasharray="<?= min(1.4, $socPercent - $level) ?> 100" stroke-dashoffset="<?= -$level ?>" transform="rotate(-90 60 60)"/>
+                        <?php endfor; ?>
+                    </svg>
                     <strong><?= $number($soc, 0) ?><small>%</small></strong>
                 </div>
                 <span class="metric-label">Naładowanie</span>
             </div>
             <div class="power-display">
-                <span class="metric-label"><?= $online ? 'Moc banku' : 'Ostatnia moc banku' ?></span>
+                <span class="metric-label"><?= htmlspecialchars($powerLabel) ?><?= $online ? '' : ' (ostatni odczyt)' ?></span>
                 <strong class="power-value"><?= $number($power, 1) ?> <small>W</small></strong>
                 <span class="energy-direction"><?= htmlspecialchars($direction) ?></span>
             </div>
@@ -62,7 +83,7 @@ $number = static fn($value, int $precision = 1): string => $value === null ? '�
         <p class="status-message status-message--<?= htmlspecialchars($visualStatus) ?>"><?= htmlspecialchars($statusText) ?></p>
         <dl class="stat-grid">
             <?php foreach ($stats as [$label, $value, $precision, $unit]): ?>
-            <div class="stat"><dt class="stat__label"><?= htmlspecialchars($label) ?></dt><dd class="stat__value"><?= $number($value, $precision) ?> <small><?= $unit ?></small></dd></div>
+            <div class="stat"><dt class="stat__label"><?= htmlspecialchars($label) ?></dt><dd class="stat__value<?= $value !== null && $label === 'Najwyższe napięcie ogniwa' ? ' value--high' : ($value !== null && $label === 'Najniższe napięcie ogniwa' ? ' value--low' : ($label === 'Różnica napięć ogniw' && $cellSpread > 100 ? ' value--spread' : '')) ?>"><?= $number($value, $precision) ?> <small><?= $unit ?></small><?php if ($label === 'Różnica napięć ogniw' && $cellSpread > 100): ?><span class="spread-warning">Ogniwa się rozchodzą</span><?php endif; ?></dd></div>
             <?php endforeach; ?>
         </dl>
         <?php endif; ?>
@@ -91,9 +112,11 @@ $number = static fn($value, int $precision = 1): string => $value === null ? '�
         <?php foreach (['cell_voltages_mv' => ['Napięcia ogniw', 'V', 1000], 'cell_resistances_ohm' => ['Rezystancja wyrównywania', 'Ω', 1]] as $key => [$label, $unit, $divisor]): ?>
         <?php if (!empty($raw[$key])): ?>
         <h3 class="details__heading"><?= $label ?> (<?= $unit ?>)</h3>
+        <?php $cellLow = min($raw[$key]); $cellHigh = max($raw[$key]); ?>
+        <?php if ($key === 'cell_voltages_mv'): ?><p class="cell-legend"><span class="value--high">Najwyższe</span> · <span class="value--low">Najniższe</span></p><?php endif; ?>
         <div class="cell-grid">
             <?php foreach ($raw[$key] as $i => $value): ?>
-            <div class="cell-chip"><span class="cell-chip__num"><?= str_pad((string) ($i + 1), 2, '0', STR_PAD_LEFT) ?></span><span><?= $number($value / $divisor, 3) ?></span></div>
+            <div class="cell-chip"><span class="cell-chip__num"><?= str_pad((string) ($i + 1), 2, '0', STR_PAD_LEFT) ?></span><span class="<?= $key === 'cell_voltages_mv' && $cellLow != $cellHigh ? ($value == $cellHigh ? 'value--high' : ($value == $cellLow ? 'value--low' : '')) : '' ?>"><?= $number($value / $divisor, 3) ?></span></div>
             <?php endforeach; ?>
         </div>
         <?php endif; ?>

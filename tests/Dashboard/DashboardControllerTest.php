@@ -55,6 +55,31 @@ class DashboardControllerTest extends TestCase
         self::assertStringContainsString('Połączony', $html);
     }
 
+    public function testSpreadWarningStartsAboveOneHundredMillivolts(): void
+    {
+        foreach ([100 => false, 101 => true] as $spread => $warns) {
+            $html = $this->renderBank(['cell_voltage_min_mv' => 3200, 'cell_voltage_max_mv' => 3200 + $spread], 0);
+            self::assertSame($warns, str_contains($html, 'Ogniwa się rozchodzą'));
+        }
+    }
+
+    public function testCellExtremaHighlightTiesButNotEqualCellsOrResistances(): void
+    {
+        $html = $this->renderBank(['raw_json' => json_encode(['cell_voltages_mv' => [3200, 3300, 3300], 'cell_resistances_ohm' => [0.01, 0.02]])], 0);
+        self::assertSame(2, substr_count($html, 'class="value--high">3,300'));
+        self::assertStringContainsString('class="value--low">3,200', $html);
+        self::assertStringNotContainsString('class="value--high">0,020', $html);
+        $equal = $this->renderBank(['raw_json' => json_encode(['cell_voltages_mv' => [3300, 3300]])], 0);
+        self::assertStringNotContainsString('class="value--high">3,300', $equal);
+        self::assertStringNotContainsString('class="value--low">3,300', $equal);
+    }
+
+    public function testPowerLabelIdentifiesEnergyDestination(): void
+    {
+        foreach ([20 => 'Moc dostarczana do banku', -20 => 'Moc pobierana z banku', 0 => 'Moc — brak przepływu'] as $current => $label) {
+            self::assertStringContainsString($label, $this->renderBank(['current_amps' => $current], 0));
+        }
+    }
     public function testBankWithoutReadingsShowsWaitingState(): void
     {
         $html = $this->renderBank(null, null);

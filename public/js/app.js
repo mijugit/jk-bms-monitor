@@ -26,9 +26,25 @@ document.addEventListener('DOMContentLoaded', () => {
                     message.textContent = 'Brak połączenia — widoczne są ostatnie zapisane dane.' + (alarm ? ` Ostatni odczyt: ${message.textContent}.` : '');
                 }
                 const label = card.querySelector('.power-display .metric-label');
-                if (label) label.textContent = 'Ostatnia moc banku';
+                if (label && !label.textContent.endsWith(' (ostatni odczyt)')) label.textContent += ' (ostatni odczyt)';
             }
         });
+    }
+
+    // A hard colour stop at the physical zero line also splits segments crossing zero.
+    function currentColour(context) {
+        const { ctx, chartArea, scales } = context.chart;
+        if (!chartArea || !scales.current) return '#68bfff';
+        const zero = scales.current.getPixelForValue(0);
+        if (zero >= chartArea.bottom) return '#68bfff';
+        if (zero <= chartArea.top) return '#ff4d4f';
+        const fraction = (zero - chartArea.top) / (chartArea.bottom - chartArea.top);
+        const gradient = ctx.createLinearGradient(0, chartArea.top, 0, chartArea.bottom);
+        gradient.addColorStop(0, '#68bfff');
+        gradient.addColorStop(fraction, '#68bfff');
+        gradient.addColorStop(fraction, '#ff4d4f');
+        gradient.addColorStop(1, '#ff4d4f');
+        return gradient;
     }
 
     async function loadChart(entry) {
@@ -49,7 +65,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const labels = points.map(p => entry.range === '1h' || entry.range === '1d' ? p.t.slice(11, 16) : `${p.t.slice(8, 10)}.${p.t.slice(5, 7)}`);
             const datasets = [
                 { label: 'Naładowanie (%)', data: points.map(p => p.soc_percent == null ? null : Number(p.soc_percent)), borderColor: '#3ddc84', yAxisID: 'soc' },
-                { label: 'Prąd (A)', data: points.map(p => p.current_amps == null ? null : Number(p.current_amps)), borderColor: '#68bfff', yAxisID: 'current' },
+                { label: 'Prąd: + ładowanie / − rozładowanie (A)', data: points.map(p => p.current_amps == null ? null : Number(p.current_amps)), borderColor: currentColour, yAxisID: 'current' },
             ].map(dataset => ({ ...dataset, borderWidth: 2, pointRadius: 0, pointHitRadius: 12, tension: .15, spanGaps: false }));
             if (entry.chart) {
                 entry.chart.data = { labels, datasets };
@@ -63,8 +79,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         plugins: { legend: { labels: { boxWidth: 10, color: '#9aa0ab', font: { size: 11 } } }, tooltip: { callbacks: { title: items => entry.points[items[0]?.dataIndex]?.t || '' } } },
                         scales: {
                             x: { ticks: { maxTicksLimit: 5, maxRotation: 0, color: '#9aa0ab', font: { size: 11 } }, grid: { display: false } },
-                            soc: { position: 'left', min: 0, max: 100, ticks: { color: '#9aa0ab', font: { size: 11 } }, grid: { color: '#ffffff08' } },
-                            current: { position: 'right', ticks: { color: '#68bfff', font: { size: 11 } }, grid: { drawOnChartArea: false } },
+                            soc: { position: 'left', min: 0, max: 100, ticks: { color: '#3ddc84', font: { size: 11 } }, grid: { color: '#ffffff08' } },
+                            current: { position: 'right', ticks: { color: context => context.tick.value < 0 ? '#ff4d4f' : '#68bfff', font: { size: 11 } }, grid: { drawOnChartArea: false } },
                         },
                     },
                 });
